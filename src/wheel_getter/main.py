@@ -296,6 +296,8 @@ def get_wheels(
         logger.debug("analyzing %s (version %s) …", pkg_name, pkg_version)
         
         present = False
+        
+        # find matching wheel name in lockfile
         matched_wheels: list[tuple[int, dict]] = []
         for wh in pkg.get("wheels", []):
             parsed_url = urlparse(wh["url"])
@@ -305,6 +307,8 @@ def get_wheels(
             if (w := matcher.match_parsed_filename(parsed_filename)) is not None:
                 matched_wheels.append((w, wh))
         
+        # get best matching wheel name (if any) and look for that wheel,
+        # download it if it isn't present
         if matched_wheels:
             matched_wheels.sort()
             w, wh = matched_wheels[0]
@@ -323,24 +327,43 @@ def get_wheels(
         else:
             logger.debug("no wheel in lockfile found for %s", pkg_name)
         
-        # is a locally built wheel present in the wheelhouse?
-        info_name = wheelhouse / f"{pkg_name}-{pkg_version}.info"
-        if info_name.exists():
-            metadata = json.load(open(info_name))
-            filename = wheelhouse / metadata["name"]
-            hash = metadata["hash"]
-            size = metadata["size"]
-            if filename.exists():
-                content = filename.read_bytes()
-                content_hash = f"sha256:{sha256(content).hexdigest()}"
-                if len(content) == size and content_hash == hash:
-                    logger.info("locally built wheel found for %s", pkg_name)
-                    present = True
+        if not present:
+            # is a locally built wheel present in the wheelhouse?
+            info_name = wheelhouse / f"{pkg_name}-{pkg_version}.info"
+            if info_name.exists():
+                metadata = json.load(open(info_name))
+                filename = wheelhouse / metadata["name"]
+                hash = metadata["hash"]
+                size = metadata["size"]
+                if filename.exists():
+                    content = filename.read_bytes()
+                    content_hash = f"sha256:{sha256(content).hexdigest()}"
+                    if len(content) == size and content_hash == hash:
+                        logger.info("locally built wheel found for %s", pkg_name)
+                        present = True
         
         if not present:
+            # try to find a wheel in an editable project
             if "source" in pkg and "editable" in pkg["source"]:
-                logger.info("ignoring package %s, is editable", pkg_name)
-                continue
+                logger.debug("package %s is editable", pkg_name)
+                edit_path = base_dir / pkg["source"]["editable"]
+                if (dist_path := edit_path / "dist").exists():
+                    for dist_name in dist_path.glob("*.whl"):
+                        parsed_dist_name = parse_wheel_filename(dist_name.name)
+                        if (parsed_dist_name.project == pkg_name and
+                                parsed_dist_name.version == pkg_version):
+                            m = matcher.match_parsed_filename(parsed_dist_name)
+                            if m is not None:
+                                logger.debug("wheel %s found in dist dir",
+                                        dist_name.name)
+                                (wheelhouse / dist_name.name).write_bytes(
+                                        dist_name.read_bytes())
+                                logger.info("wheel %s found in editable project",
+                                        dist_name.name)
+                                present = True
+        
+        if not present:
+            # try to download and build a source archive
             sdist = pkg.get("sdist")
             if sdist is None:
                 logger.error("cannot download package %s, no sdist", pkg_name)

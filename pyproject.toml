@@ -1,12 +1,12 @@
 [project]
 name = "wheel-getter"
-version = "0.1.0"
+version = "0.2.0"
 description = "Get or build wheels for isolated installation of a Python package"
 readme = "README.md"
 authors = [
     { name = "Detlef Lannert", email = "detlef@lannert.de" }
 ]
-license = "GPL-3.0-or-later"
+license-expresssion = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 keywords = ["wheel", "installation", "package", "uv"]
 requires-python = ">=3.12"
@@ -26,7 +26,6 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
-  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
 ]
 
 [project.scripts]
@@ -47,3 +46,7 @@ build-backend = "uv_build"
 dev = [
     "mypy>=1.17.1",
 ]
+
+[tool.uv.build-backend]
+wheel-exclude = ["*\\~", ".\\#*"]
+source-exclude = ["*\\~", ".\\#*"]

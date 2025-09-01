@@ -151,59 +151,67 @@ def get_and_build_wheel(
     Returns always True (for now) as an error is raised if the operation
     was unsuccessful.
     """
-    current_dir = Path.cwd()
-    if not workdir.exists():
-        workdir.mkdir()
-    os.chdir(workdir)
+    if dry_run:
+        print(f"would download sdist {url} and build {package}")
+        return True
     
     parsed_url = urlparse(url)
     filename = Path(parsed_url.path).name
     
-    if dry_run:
-        print(f"would download sdist {url}")
-        return True
-    logger.debug("downloading sdist %s …", filename)
-    r = niquests.get(url)
-    if r.status_code != 200:
-        logger.error(
-                "server sent status code %s for %s",
-                r.status_code,
-                url,
-                )
-        raise ValueError("download failure")
-    target = Path(filename)
-    if not r.content:
-        logger.error(
-                "no data received from %s",
-                url,
-                )
-        raise ValueError("download failure")
-    if len(r.content) != size:
-        logger.error(
-                "wrong file size received from %s (was %s, should be %s)",
-                url,
-                len(r.content),
-                size,
-                )
-        raise ValueError("download failure")
-    file_hash = f"sha256:{sha256(r.content).hexdigest()}"
-    if file_hash != hash:
-        logger.error(
-                "wrong hash for file from %s:\nwas:       %s\nshould be: %s",
-                url,
-                file_hash,
-                hash,
-                )
-        raise ValueError("download failure")
-    target.write_bytes(r.content)
-    logger.info("downloaded %s", filename)
+    workdir = workdir.absolute()
+    filepath = workdir / filename
     
-    subprocess.run(
-            ["uv", "build", "--wheel", "--python", python, filename],
-            check=True,
-            )
+    try:
+        if not workdir.exists():
+            workdir.mkdir()
+        
+        logger.debug("downloading sdist %s …", filename)
+        r = niquests.get(url)
+        if r.status_code != 200:
+            logger.error(
+                    "server sent status code %s for %s",
+                    r.status_code,
+                    url,
+                    )
+            raise ValueError("download failure")
+        if not r.content:
+            logger.error(
+                    "no data received from %s",
+                    url,
+                    )
+            raise ValueError("download failure")
+        if len(r.content) != size:
+            logger.error(
+                    "wrong file size received from %s (was %s, should be %s)",
+                    url,
+                    len(r.content),
+                    size,
+                    )
+            raise ValueError("download failure")
+        file_hash = f"sha256:{sha256(r.content).hexdigest()}"
+        if file_hash != hash:
+            logger.error(
+                    "wrong hash for file from %s:\nwas:       %s\nshould be: %s",
+                    url,
+                    file_hash,
+                    hash,
+                    )
+            raise ValueError("download failure")
+        filepath.write_bytes(r.content)
+        logger.info("downloaded %s", filename)
+        
+        subprocess.run(
+                ["uv", "build", "--wheel", "--python", python, filepath],
+                check=True,
+                )
+        
+    finally:
+        filepath.unlink(missing_ok=True)
+        try:
+            workdir.rmdir()
+        except OSError:
+            pass
     
-    os.chdir(current_dir)
     
     subprocess.run(["ls", "-l", package_dir / "dist"])
     for p in (package_dir / "dist").glob("*.whl"):
@@ -214,7 +222,7 @@ def get_and_build_wheel(
             wheel_size = len(content)
             p.rename(wheelhouse / p.name)
             metadata = {"name": p.name, "hash": wheel_hash, "size": wheel_size}
-            metafile = wheelhouse / f"{package}.info"
+            metafile = wheelhouse / f"{package}-{version}.info"
             json.dump(metadata, open(metafile, "w"))
             break
     else:
@@ -237,10 +245,6 @@ def get_wheels(
     """Gets and/or builds wheels if necessary, putting them in the wheelhouse."""
     if debug:
         logger.setLevel(logging.DEBUG)
-    if python is None:
-        python = f"{sys.version_info.major}.{sys.version_info.minor}"
-    py_marker = f"cp{python.replace('.', '')}"
-    logger.debug("using python marker %s", py_marker)
     
     if directory is not None:
         os.chdir(directory)
@@ -261,6 +265,17 @@ def get_wheels(
             raise ValueError("no project found")
     logger.debug("using base directory %s", base_dir)
     
+    if python is None:
+        if (pin_file := base_dir / ".python-version").exists():
+            python_version = pin_file.read_text().strip()
+        else:
+            python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        logger.info("working with Python version %s", python)
+    else:
+        python_version = python
+    py_marker = f"cp{python_version.replace('.', '')}"
+    logger.debug("using python marker %s", py_marker)
+    
     lockfile = base_dir / "uv.lock"
     if not lockfile.exists():
         logger.error("no lockfile found at %s", base_dir)
@@ -273,11 +288,12 @@ def get_wheels(
     uvl = tomllib.load(open(lockfile, "rb"))
     logger.info("read lockfile from %s", lockfile)
     
-    matcher = TagMatcher(python=python)
+    matcher = TagMatcher(python=python_version)
     
     for pkg in uvl["package"]:
         pkg_name = pkg["name"]
-        logger.debug("analyzing %s (version %s) …", pkg_name, pkg["version"])
+        pkg_version = pkg["version"]
+        logger.debug("analyzing %s (version %s) …", pkg_name, pkg_version)
         
         present = False
         matched_wheels: list[tuple[int, dict]] = []
@@ -308,7 +324,7 @@ def get_wheels(
             logger.debug("no wheel in lockfile found for %s", pkg_name)
         
         # is a locally built wheel present in the wheelhouse?
-        info_name = wheelhouse / f"{pkg_name}.info"
+        info_name = wheelhouse / f"{pkg_name}-{pkg_version}.info"
         if info_name.exists():
             metadata = json.load(open(info_name))
             filename = wheelhouse / metadata["name"]
@@ -331,14 +347,14 @@ def get_wheels(
                 raise ValueError(f"package {pkg_name}")
             present = get_and_build_wheel(
                     package=pkg_name,
-                    version=pkg["version"],
+                    version=pkg_version,
                     wheelhouse=wheelhouse.absolute(),
                     package_dir=base_dir.absolute(),
                     url=sdist["url"],
                     hash=sdist["hash"],
                     size=sdist["size"],
                     workdir=workdir,
-                    python=python,
+                    python=python_version,
                     dry_run=dry_run,
                     )
             if present:

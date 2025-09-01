@@ -350,12 +350,11 @@ def get_wheels(
                 if (dist_path := edit_path / "dist").exists():
                     for dist_name in dist_path.glob("*.whl"):
                         parsed_dist_name = parse_wheel_filename(dist_name.name)
-                        if (parsed_dist_name.project == pkg_name and
+                        dist_project = parsed_dist_name.project.replace("_", "-")
+                        if (dist_project == pkg_name and
                                 parsed_dist_name.version == pkg_version):
                             m = matcher.match_parsed_filename(parsed_dist_name)
                             if m is not None:
-                                logger.debug("wheel %s found in dist dir",
-                                        dist_name.name)
                                 (wheelhouse / dist_name.name).write_bytes(
                                         dist_name.read_bytes())
                                 logger.info("wheel %s found in editable project",

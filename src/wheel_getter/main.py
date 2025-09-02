@@ -1,5 +1,4 @@
 from cyclopts import App
-from hashlib import sha256
 import json
 import logging
 import niquests
@@ -11,6 +10,8 @@ import sys
 import tomllib
 from urllib.parse import urlparse
 from wheel_filename import parse_wheel_filename, ParsedWheelFilename
+
+from .checksums import get_checksum, verify_checksum
 
 
 logger = logging.getLogger("wheel_getter")
@@ -74,8 +75,8 @@ def check_or_get_wheel(
     if p.exists():
         logger.debug("wheel %s is present", filename)
         data = p.read_bytes()
-        file_hash = f"sha256:{sha256(data).hexdigest()}"
-        if file_hash != hash:
+        if not verify_checksum(data, hash):
+            file_hash = get_checksum(data)
             logger.error(
                     "hash for %s doesn't match:\n  on disk:   %s\nshould be: %s",
                     filename,
@@ -119,8 +120,9 @@ def check_or_get_wheel(
                 size,
                 )
         raise ValueError("download failure")
-    file_hash = f"sha256:{sha256(r.content).hexdigest()}"
-    if file_hash != hash:
+    
+    if not verify_checksum(r.content, hash):
+        file_hash = get_checksum(r.content)
         logger.error(
                 "wrong hash for file from %s:\nwas:       %s\nshould be: %s",
                 url,
@@ -188,8 +190,8 @@ def get_and_build_wheel(
                     size,
                     )
             raise ValueError("download failure")
-        file_hash = f"sha256:{sha256(r.content).hexdigest()}"
-        if file_hash != hash:
+        if not verify_checksum(r.content, hash):
+            file_hash = get_checksum(r.content)
             logger.error(
                     "wrong hash for file from %s:\nwas:       %s\nshould be: %s",
                     url,
@@ -218,7 +220,7 @@ def get_and_build_wheel(
         wheel_name = parse_wheel_filename(p)
         if (wheel_name.project == package and wheel_name.version == version):
             content = p.read_bytes()
-            wheel_hash = f"sha256:{sha256(content).hexdigest()}"
+            wheel_hash = get_checksum(content)
             wheel_size = len(content)
             p.rename(wheelhouse / p.name)
             metadata = {"name": p.name, "hash": wheel_hash, "size": wheel_size}
@@ -337,8 +339,7 @@ def get_wheels(
                 size = metadata["size"]
                 if filename.exists():
                     content = filename.read_bytes()
-                    content_hash = f"sha256:{sha256(content).hexdigest()}"
-                    if len(content) == size and content_hash == hash:
+                    if len(content) == size and verify_checksum(content, hash):
                         logger.info("locally built wheel found for %s", pkg_name)
                         present = True
         

@@ -1,11 +1,15 @@
 from hashlib import sha256
-from typing import Literal
+from typing import Final, Literal
+
+
+ALGO_SHA256: Final = "sha256"  # only sensible way to make mypy happy
+ALGO_LIST: Final[list[Literal["sha256"]]] = [ALGO_SHA256]
 
 
 def get_checksum(
         data: bytes,
         *,
-        algo: Literal["sha256"] = "sha256",  # type: ignore[arg-type]
+        algo: Literal["sha256"] = ALGO_SHA256,
         ) -> str:
     """
     Calculates the hash of a byte string and returns it (with an algorithm id).
@@ -25,12 +29,8 @@ def verify_checksum(
     The hash is always prefixed with an algorith id.
     Currently only sha256 is supported.
     """
-    for algo in ["sha256"]:  # type: ignore[assignment]
+    for algo in ALGO_LIST:
         if hash.startswith(f"{algo}:"):
-            ref = get_checksum(data, algo=algo)  # type: ignore[arg-type]
+            ref = get_checksum(data, algo=algo)
             return hash == ref
     return False
-
-# Note: mypy doesn't even accept a string constant for a Literal argument.
-# Only a type-ignore comment seems to help.
-# ty gets it right.

@@ -146,16 +146,16 @@ def get_and_build_wheel(
         package_dir: Path,
         python: str,
         dry_run: bool,
-        ) -> bool:
+        ) -> str | None:
     """
     Downloads an sdist archive and builds a wheel (invoking uv).
     
-    Returns always True (for now) as an error is raised if the operation
-    was unsuccessful.
+    Returns the (final path component of) the wheel filename if the wheel
+    was built, None otherwise.
     """
     if dry_run:
         print(f"would download sdist {url} and build {package}")
-        return True
+        return None
     
     parsed_url = urlparse(url)
     filename = Path(parsed_url.path).name
@@ -215,7 +215,7 @@ def get_and_build_wheel(
             pass
     
     
-    subprocess.run(["ls", "-l", package_dir / "dist"])
+    # subprocess.run(["ls", "-l", package_dir / "dist"])
     for p in (package_dir / "dist").glob("*.whl"):
         wheel_name = parse_wheel_filename(p)
         if (wheel_name.project == package and wheel_name.version == version):
@@ -223,6 +223,7 @@ def get_and_build_wheel(
             wheel_hash = get_checksum(content)
             wheel_size = len(content)
             p.rename(wheelhouse / p.name)
+            result = p.name
             metadata = {"name": p.name, "hash": wheel_hash, "size": wheel_size}
             metafile = wheelhouse / f"{package}-{version}.info"
             json.dump(metadata, open(metafile, "w"))
@@ -231,7 +232,7 @@ def get_and_build_wheel(
         logger.error("wheel for %s not found", package)
         raise ValueError("wheel not found")
     
-    return True
+    return result
 
 
 @app.default
@@ -356,8 +357,9 @@ def get_wheels(
                                 parsed_dist_name.version == pkg_version):
                             m = matcher.match_parsed_filename(parsed_dist_name)
                             if m is not None:
-                                (wheelhouse / dist_name.name).write_bytes(
-                                        dist_name.read_bytes())
+                                wheel_name = dist_name.name
+                                filename = wheelhouse / wheel_name
+                                filename.write_bytes(dist_name.read_bytes())
                                 logger.info("wheel %s found in editable project",
                                         dist_name.name)
                                 present = True
@@ -368,7 +370,7 @@ def get_wheels(
             if sdist is None:
                 logger.error("cannot download package %s, no sdist", pkg_name)
                 raise ValueError(f"package {pkg_name}")
-            present = get_and_build_wheel(
+            wheel_name = get_and_build_wheel(
                     package=pkg_name,
                     version=pkg_version,
                     wheelhouse=wheelhouse.absolute(),
@@ -380,7 +382,5 @@ def get_wheels(
                     python=python_version,
                     dry_run=dry_run,
                     )
-            if present:
-                logger.info("wheel %s successfully built", filename)
-            else:
-                logger.error("wheel %s was not downloaded", filename)
+            if wheel_name is not None:
+                logger.info("wheel %s successfully built", wheel_name)

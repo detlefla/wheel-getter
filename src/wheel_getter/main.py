@@ -374,6 +374,9 @@ def get_wheels(
             if sdist is None:
                 logger.error("cannot download package %s, no sdist", pkg_name)
                 # raise ValueError(f"package {pkg_name}")
+            if "url" not in sdist or "hash" not in sdist or "size" not in sdist:
+                logger.error("cannot build package %s, no sdist", pkg_name)
+                continue
             wheel_name = get_and_build_wheel(
                     package=pkg_name,
                     version=pkg_version,

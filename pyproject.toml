@@ -1,6 +1,6 @@
 [project]
 name = "wheel-getter"
-version = "0.3.4"
+version = "0.3.5"
 description = "Get or build wheels for isolated installation of a Python package"
 readme = "README.md"
 authors = [

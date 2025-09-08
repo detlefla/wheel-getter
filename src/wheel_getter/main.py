@@ -231,7 +231,8 @@ def get_and_build_wheel(
             break
     else:
         logger.error("wheel for %s not found", package)
-        raise ValueError("wheel not found")
+        # raise ValueError("wheel not found")
+        result = None
     
     return result
 

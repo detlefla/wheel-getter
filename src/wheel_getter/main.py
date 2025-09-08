@@ -218,7 +218,8 @@ def get_and_build_wheel(
     # subprocess.run(["ls", "-l", package_dir / "dist"])
     for p in (package_dir / "dist").glob("*.whl"):
         wheel_name = parse_wheel_filename(p)
-        if (wheel_name.project == package and wheel_name.version == version):
+        project_name = wheel_name.project.replace("_", "-")
+        if (project_name == package and wheel_name.version == version):
             content = p.read_bytes()
             wheel_hash = get_checksum(content)
             wheel_size = len(content)

@@ -202,10 +202,14 @@ def get_and_build_wheel(
         filepath.write_bytes(r.content)
         logger.info("downloaded %s", filename)
         
-        subprocess.run(
-                ["uv", "build", "--wheel", "--python", python, filepath],
-                check=True,
-                )
+        try:
+            subprocess.run(
+                    ["uv", "build", "--wheel", "--python", python, filepath],
+                    check=True,
+                    )
+        except subprocess.CalledProcessError:
+            logger.error("failed to build %s", package)
+            return None
         
     finally:
         filepath.unlink(missing_ok=True)

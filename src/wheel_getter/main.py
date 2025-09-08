@@ -346,6 +346,8 @@ def get_wheels(
         
         if not present:
             # try to find a wheel in an editable project
+            if "source" in pkg and "virtual" in pkg["source"]:
+                continue
             if "source" in pkg and "editable" in pkg["source"]:
                 logger.debug("package %s is editable", pkg_name)
                 edit_path = base_dir / pkg["source"]["editable"]

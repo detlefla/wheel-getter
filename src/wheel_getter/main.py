@@ -5,6 +5,8 @@ import niquests
 import os
 from pathlib import Path
 from pip._internal.utils import compatibility_tags
+from rich import print
+from rich.logging import RichHandler
 import subprocess
 import sys
 import tomllib
@@ -12,12 +14,20 @@ from urllib.parse import urlparse
 from wheel_filename import parse_wheel_filename, ParsedWheelFilename
 
 from .checksums import get_checksum, verify_checksum
+from .pkgstatus import get_locklist, PackageWheel
+from .reporter import Reporter
+from . import VERSION
 
 
+logging.basicConfig(
+    level="INFO",
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=True)]
+)
 logger = logging.getLogger("wheel_getter")
-logger.setLevel(logging.INFO)
-logger.addHandler(logging.StreamHandler())
-app = App()
+reporter = Reporter()
+app = App(version=VERSION)
 
 
 class TagMatcher:
@@ -64,6 +74,7 @@ def check_or_get_wheel(
         hash: str,
         size: int,
         dry_run: bool,
+        reporter: Reporter,
         ) -> bool:
     """
     Checks if a wheel is in the wheelhouse, otherwise downloads and checks it.
@@ -146,6 +157,7 @@ def get_and_build_wheel(
         package_dir: Path,
         python: str,
         dry_run: bool,
+        reporter: Reporter,
         ) -> str | None:
     """
     Downloads an sdist archive and builds a wheel (invoking uv).
@@ -208,7 +220,7 @@ def get_and_build_wheel(
                     check=True,
                     )
         except subprocess.CalledProcessError:
-            logger.error("failed to build %s", package)
+            reporter.error("failed to build %s", package)
             return None
         
     finally:
@@ -234,7 +246,7 @@ def get_and_build_wheel(
             json.dump(metadata, open(metafile, "w"))
             break
     else:
-        logger.error("wheel for %s not found", package)
+        reporter.error("wheel for %s not found", package)
         # raise ValueError("wheel not found")
         result = None
     
@@ -279,7 +291,7 @@ def get_wheels(
             python_version = pin_file.read_text().strip()
         else:
             python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-        logger.info("working with Python version %s", python)
+        logger.info("working with Python version %s", python_version)
     else:
         python_version = python
     py_marker = f"cp{python_version.replace('.', '')}"
@@ -289,56 +301,63 @@ def get_wheels(
     if not lockfile.exists():
         logger.error("no lockfile found at %s", base_dir)
         raise ValueError("no lockfile found")
+    locklist = get_locklist(base_dir, reporter=reporter)
     
     if not wheelhouse.exists():
-        wheelhouse.mkdir(parents=True, exist_ok=True)
+        if dry_run:
+            print(f"[green]would create wheelhouse “{wheelhouse}”")
+        else:
+            wheelhouse.mkdir(parents=True, exist_ok=True)
+            logging.info("created wheelhouse directory “{%s}”", wheelhouse)
     workdir = wheelhouse / "temp"
-    
-    uvl = tomllib.load(open(lockfile, "rb"))
-    logger.info("read lockfile from %s", lockfile)
     
     matcher = TagMatcher(python=python_version)
     
-    for pkg in uvl["package"]:
-        pkg_name = pkg["name"]
-        pkg_version = pkg["version"]
-        logger.debug("analyzing %s (version %s) …", pkg_name, pkg_version)
+    filename: Path
+    for pkg in locklist:
+        logger.debug("analyzing %s (version %s) …", pkg.name, pkg.version)
         
         present = False
         
         # find matching wheel name in lockfile
-        matched_wheels: list[tuple[int, dict]] = []
-        for wh in pkg.get("wheels", []):
-            parsed_url = urlparse(wh["url"])
-            filename = Path(parsed_url.path).name
-            parsed_filename = parse_wheel_filename(filename)
-            
-            if (w := matcher.match_parsed_filename(parsed_filename)) is not None:
-                matched_wheels.append((w, wh))
+        matched_wheels: list[tuple[int, PackageWheel]] = []
+        if pkg.info is not None and pkg.info.wheels is not None:
+            for wh in pkg.info.wheels:
+                parsed_url = urlparse(wh.url)
+                wheel_filename = Path(parsed_url.path).name
+                parsed_filename = parse_wheel_filename(wheel_filename)
+                
+                if (w := matcher.match_parsed_filename(parsed_filename)) is not None:
+                    matched_wheels.append((w, wh))
         
         # get best matching wheel name (if any) and look for that wheel,
         # download it if it isn't present
         if matched_wheels:
             matched_wheels.sort()
             w, wh = matched_wheels[0]
-            parsed_url = urlparse(wh["url"])
-            filename = Path(parsed_url.path).name
+            parsed_url = urlparse(wh.url)
+            wheel_filename = Path(parsed_url.path).name
             
-            logger.debug("trying wheel %s", filename)
-            present = check_or_get_wheel(
-                    wheelhouse,
-                    filename,
-                    url=wh["url"],
-                    hash=wh["hash"],
-                    size=wh["size"],
-                    dry_run=dry_run,
-                    )
+            if dry_run:
+                print(f"[green]would download wheel {wheel_filename}")
+                present = True
+            else:
+                logger.debug("trying wheel %s", wheel_filename)
+                present = check_or_get_wheel(
+                        wheelhouse,
+                        wheel_filename,
+                        url=wh.url,
+                        hash=wh.hash,
+                        size=wh.size,
+                        dry_run=dry_run,
+                        reporter=reporter,
+                        )
         else:
-            logger.debug("no wheel in lockfile found for %s", pkg_name)
+            logger.debug("no wheel in lockfile found for %s", pkg.name)
         
         if not present:
             # is a locally built wheel present in the wheelhouse?
-            info_name = wheelhouse / f"{pkg_name}-{pkg_version}.info"
+            info_name = wheelhouse / f"{pkg.name}-{pkg.version}.info"
             if info_name.exists():
                 metadata = json.load(open(info_name))
                 filename = wheelhouse / metadata["name"]
@@ -347,22 +366,22 @@ def get_wheels(
                 if filename.exists():
                     content = filename.read_bytes()
                     if len(content) == size and verify_checksum(content, hash):
-                        logger.info("locally built wheel found for %s", pkg_name)
+                        logger.info("locally built wheel found for %s", pkg.name)
                         present = True
         
-        if not present:
+        if not present and pkg.info is not None and pkg.info.source is not None:
             # try to find a wheel in an editable project
-            if "source" in pkg and "virtual" in pkg["source"]:
+            if pkg.info.source.virtual:
                 continue
-            if "source" in pkg and "editable" in pkg["source"]:
-                logger.debug("package %s is editable", pkg_name)
-                edit_path = base_dir / pkg["source"]["editable"]
+            if pkg.info.source.editable:
+                logger.debug("package %s is editable", pkg.name)
+                edit_path = base_dir / pkg.info.source.editable
                 if (dist_path := edit_path / "dist").exists():
                     for dist_name in dist_path.glob("*.whl"):
                         parsed_dist_name = parse_wheel_filename(dist_name.name)
                         dist_project = parsed_dist_name.project.replace("_", "-")
-                        if (dist_project == pkg_name and
-                                parsed_dist_name.version == pkg_version):
+                        if (dist_project == pkg.name and
+                                parsed_dist_name.version == pkg.version):
                             m = matcher.match_parsed_filename(parsed_dist_name)
                             if m is not None:
                                 wheel_name = dist_name.name
@@ -372,27 +391,33 @@ def get_wheels(
                                         dist_name.name)
                                 present = True
         
-        if not present:
+        if not present and pkg.info is not None and pkg.info.sdist is not None:
             # try to download and build a source archive
-            sdist = pkg.get("sdist")
+            sdist = pkg.info.sdist
             if sdist is None:
-                logger.error("cannot download package %s, no sdist", pkg_name)
-                # raise ValueError(f"package {pkg_name}")
+                reporter.error("cannot download package %s, no sdist", pkg.name)
+                # raise ValueError(f"package {pkg.name}")
                 continue
-            if "url" not in sdist or "hash" not in sdist or "size" not in sdist:
-                logger.error("cannot build package %s, no sdist", pkg_name)
+            if sdist.url is None or sdist.hash is None or sdist.size is None:
+                reporter.error("cannot build package %s, no sdist", pkg.name)
                 continue
-            wheel_name = get_and_build_wheel(
-                    package=pkg_name,
-                    version=pkg_version,
-                    wheelhouse=wheelhouse.absolute(),
-                    package_dir=base_dir.absolute(),
-                    url=sdist["url"],
-                    hash=sdist["hash"],
-                    size=sdist["size"],
-                    workdir=workdir,
-                    python=python_version,
-                    dry_run=dry_run,
-                    )
-            if wheel_name is not None:
-                logger.info("wheel %s successfully built", wheel_name)
+            if dry_run:
+                print(f"[green]would get and build wheel for {pkg.name}")
+            else:
+                maybe_wheel_name = get_and_build_wheel(
+                        package=pkg.name,
+                        version=pkg.version,
+                        wheelhouse=wheelhouse.absolute(),
+                        package_dir=base_dir.absolute(),
+                        url=sdist.url,
+                        hash=sdist.hash,
+                        size=sdist.size,
+                        workdir=workdir,
+                        python=python_version,
+                        dry_run=dry_run,
+                        reporter=reporter,
+                        )
+                if maybe_wheel_name is not None:
+                    logger.info("wheel %s successfully built", maybe_wheel_name)
+    
+    reporter.report()

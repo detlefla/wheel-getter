@@ -63,11 +63,16 @@ class PackageListItem(msgspec.Struct):
 
 
 def get_installed_packages(
+            lockfile_dir: Path,
             reporter: Reporter,
             ) -> list[PackageListItem]:
     """Returns a list of PackageListItem objects for installed packages."""
     try:
-        r = subprocess.run(["uv", "export"], capture_output=True)
+        r = subprocess.run(
+                ["uv", "export", "--project", str(lockfile_dir)],
+                capture_output=True,
+                check=True,
+                )
     except subprocess.CalledProcessError:
         reporter.error("could not list installed modules")
         raise ValueError("could not list installed modules")
@@ -128,7 +133,7 @@ def get_locklist(
     
     pkg_dict = {pkg.name: pkg for pkg in lf_data.package}
     
-    pkg_list = get_installed_packages(reporter=reporter)
+    pkg_list = get_installed_packages(lockfile_dir, reporter=reporter)
     for pkg in pkg_list:
         pkg.info = pkg_dict.get(pkg.name)
         if pkg.info is None:

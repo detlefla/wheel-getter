@@ -5,11 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## [Unreleased] - 2025-09-02
+## [0.4.4] - 2025-09-10
 
 ### Changed
 
 - Checksum calculation factored out.
+
+- Hopefully better strategy to collect required wheels.
+
+- Some refactoring
+
+### Added
+
+- Report errors and warnings (again) when program run is finished.
 
 ## [0.2.0] - 2025-09-01
 

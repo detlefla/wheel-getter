@@ -94,7 +94,7 @@ def get_installed_packages(
                 except KeyError:
                     reporter.error(
                             "project information not found in %s",
-                            pyp_path,
+                            str(pyp_path),
                             )
                     continue
                 pkg = PackageListItem(name=name, version=version)

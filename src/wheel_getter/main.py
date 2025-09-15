@@ -9,7 +9,6 @@ from rich import print
 from rich.logging import RichHandler
 import subprocess
 import sys
-import tomllib
 from urllib.parse import urlparse
 from wheel_filename import parse_wheel_filename, ParsedWheelFilename
 
@@ -229,7 +228,6 @@ def get_and_build_wheel(
             workdir.rmdir()
         except OSError:
             pass
-    
     
     # subprocess.run(["ls", "-l", package_dir / "dist"])
     for p in (package_dir / "dist").glob("*.whl"):

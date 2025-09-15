@@ -18,14 +18,16 @@ dependencies = [
     "wheel-filename>=1.4.2",
 ]
 classifiers = [
-  "Development Status :: 4 - Beta",
-  "Intended Audience :: Developers",
-  "Topic :: Software Development :: Build Tools",
-  "Topic :: System :: Installation/Setup",
-  "Topic :: Utilities",
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Installation/Setup",
+    "Topic :: Utilities",
+    "Typing :: Typed",
 ]
 
 [project.scripts]

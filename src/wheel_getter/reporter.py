@@ -6,7 +6,6 @@ from rich import print
 logger = logging.getLogger("wheel_getter")
 
 
-
 class Reporter(msgspec.Struct):
     warnings: list[str] = []
     errors: list[str] = []

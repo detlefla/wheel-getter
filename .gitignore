@@ -12,3 +12,7 @@ wheels/
 # Editor backup and lock files
 *~
 .#*
+
+# Generated README files
+README.html
+README.pdf

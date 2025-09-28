@@ -103,6 +103,9 @@ def get_installed_packages(
         else:
             spec = line.split()[0]
             logger.debug("found dependency on %s", spec)
+            if "==" not in spec:
+                logger.error("unrecognized version spec “%s”", spec)
+                continue
             name, version = spec.split("==")
             pkg = PackageListItem(name=name, version=version)
         result.append(pkg)

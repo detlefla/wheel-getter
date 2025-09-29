@@ -4,8 +4,11 @@
 from datetime import datetime as dt
 import logging
 import msgspec
+import os
 from pathlib import Path
+import platform
 import subprocess
+import sys
 
 from .reporter import Reporter
 
@@ -77,6 +80,16 @@ def get_installed_packages(
         reporter.error("could not list installed modules")
         raise ValueError("could not list installed modules")
     
+    platform_info = dict(
+            implementation_name=platform.python_implementation(),
+            os_name=os.name,
+            platform_machine=platform.machine(),
+            platform_python_implementation=platform.python_implementation(),
+            python_full_version=f"{sys.version_info.major}.{sys.version_info.minor}",
+            sys_platform=sys.platform,
+            # what else??
+            )
+    
     result: list[PackageListItem] = []
     here = Path.cwd()
     for line in r.stdout.decode().splitlines():
@@ -101,7 +114,14 @@ def get_installed_packages(
         elif line.strip().startswith("#"):
             continue
         else:
-            spec = line.split()[0]
+            raw_spec = line.strip().rstrip("\\").strip()
+            if ";" in raw_spec:
+                ver_spec, cond = raw_spec.split(";", 1)
+                if not eval(cond, None, platform_info):
+                    continue
+            else:
+                ver_spec = raw_spec
+            spec = ver_spec.split()[0]
             logger.debug("found dependency on %s", spec)
             if "==" not in spec:
                 logger.error("unrecognized version spec “%s”", spec)

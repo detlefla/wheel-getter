@@ -37,9 +37,10 @@ class PackageSdist(msgspec.Struct):
 
 
 class PackageWheel(msgspec.Struct):
-    url: str
-    hash: str  # format: "sha256:<hash>"
-    size: int
+    url: str | None = None
+    hash: str = ""  # format: "sha256:<hash>"
+    size: int = 0
+    path: str = ""
     upload_time: dt | None = None  # format: "2024-11-30T04:30:14.439Z"
 
 

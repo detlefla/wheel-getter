@@ -321,9 +321,26 @@ def get_wheels(
         matched_wheels: list[tuple[int, PackageWheel]] = []
         if pkg.info is not None and pkg.info.wheels is not None:
             for wh in pkg.info.wheels:
-                parsed_url = urlparse(wh.url)
-                wheel_filename = Path(parsed_url.path).name
-                parsed_filename = parse_wheel_filename(wheel_filename)
+                if wh.url is None:
+                    # wheel was installed from a local directory
+                    wheel_filename = Path(pkg.info.source.registry) / wh.path
+                    if wheel_filename.exists():
+                        if dry_run:
+                            print(f"[green]would copy wheel {wheel_filename}")
+                        else:
+                            content = wheel_filename.read_bytes()
+                            filename = wheelhouse / wh.path
+                            if filename != wheel_filename:
+                                filename.write_bytes(content)
+                        present = True
+                        break
+                    else:
+                        logger.warning("wheel not found at local path %s", wheel_filename)
+                else:
+                    parsed_url = urlparse(wh.url)
+                    wheel_filename = Path(parsed_url.path).name
+                    parsed_filename = parse_wheel_filename(wheel_filename)
+                
                 
                 if (w := matcher.match_parsed_filename(parsed_filename)) is not None:
                     matched_wheels.append((w, wh))
@@ -351,7 +368,8 @@ def get_wheels(
                         reporter=reporter,
                         )
         else:
-            logger.debug("no wheel in lockfile found for %s", pkg.name)
+            if not present:
+                logger.debug("no wheel in lockfile found for %s", pkg.name)
         
         if not present:
             # is a locally built wheel present in the wheelhouse?

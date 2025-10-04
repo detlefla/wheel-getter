@@ -1,6 +1,6 @@
 [project]
 name = "wheel-getter"
-version = "0.4.12"
+version = "0.5.0"
 description = "Get or build wheels for isolated installation of a Python package"
 readme = "README.md"
 authors = [
@@ -48,6 +48,7 @@ build-backend = "uv_build"
 dev = [
     "ipython>=9.5.0",
     "mypy>=1.17.1",
+    "pyright>=1.1.406",
 ]
 
 [tool.uv.build-backend]

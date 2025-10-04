@@ -1,21 +1,23 @@
+from enum import StrEnum
 from hashlib import sha256
-from typing import Final, Literal
 
 
-ALGO_SHA256: Final = "sha256"  # only sensible way to make mypy happy
-ALGO_LIST: Final[list[Literal["sha256"]]] = [ALGO_SHA256]
+class Algo(StrEnum):
+    SHA256 = "sha256"
 
 
 def get_checksum(
         data: bytes,
         *,
-        algo: Literal["sha256"] = ALGO_SHA256,
+        algo: str = Algo.SHA256,
         ) -> str:
     """
     Calculates the hash of a byte string and returns it (with an algorithm id).
     
     Currently only sha256 is supported.
     """
+    if algo not in Algo:
+        raise ValueError(f"invalid checksum algorithm “{algo}”")
     return f"sha256:{sha256(data).hexdigest()}"
 
 
@@ -29,7 +31,7 @@ def verify_checksum(
     The hash is always prefixed with an algorith id.
     Currently only sha256 is supported.
     """
-    for algo in ALGO_LIST:
+    for algo in Algo:
         if hash.startswith(f"{algo}:"):
             ref = get_checksum(data, algo=algo)
             return hash == ref

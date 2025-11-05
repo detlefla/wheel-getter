@@ -28,7 +28,7 @@ app = App(version=VERSION)
 def get_wheels(
         wheelhouse: Path = Path("wheels"),
         # lockfile: Path = Path("uv.lock"),
-        package: Path | None = None,
+        project: Path | None = None,
         directory: Path | None = None,
         python: str | None = None,
         debug: bool = False,
@@ -42,7 +42,7 @@ def get_wheels(
         os.chdir(directory)
         logger.debug("changed to %s", directory)
     
-    if package is None:
+    if project is None:
         base_dir = Path.cwd()
         while not (base_dir / "pyproject.toml").exists():
             parent = base_dir.parent
@@ -51,9 +51,9 @@ def get_wheels(
                 raise ValueError("no project found")
             base_dir = parent
     else:
-        base_dir = package
+        base_dir = project
         if not (base_dir / "pyproject.toml").exists():
-            logger.error("%s is not a package directory", package)
+            logger.error("%s is not a package directory", project)
             raise ValueError("no project found")
     logger.debug("using base directory %s", base_dir)
     

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [unreleased]
 
+## [0.5.1] - 2025-11-05
+
+### Changed
+
+- Possibly (minor) breaking change: option `--package` renamed to
+  `--project`
+
+- Fixed handling of relative paths when `--project` or `--directory` given
+
+- Added a warning if editable project was not found
+
+- Do not skip packages that don't match the current platform because uv
+  requires them anyway
+
 ## [0.5.0] - 2025-10-04
 
 ### Changed

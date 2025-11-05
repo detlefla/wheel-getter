@@ -237,14 +237,13 @@ def get_installed_packages(
             )
     
     result: list[PackageListItem] = []
-    here = Path.cwd()
     for line in r.stdout.decode().splitlines():
         pkg: PackageListItem | None = None
         if line.startswith(" "):
             continue
         elif line.startswith("-e"):
             option, path = line.split()
-            base = here / path
+            base = lockfile_dir / path
             if (pyp_path := base / "pyproject.toml").exists():
                 logger.debug("found editable installation at %s", base)
                 pyp = msgspec.toml.decode(pyp_path.read_bytes())
@@ -258,14 +257,16 @@ def get_installed_packages(
                             )
                     continue
                 pkg = PackageListItem(name=name, version=version)
+            else:
+                logger.warning("pyproject.toml not found at %s", base)
         elif line.strip().startswith("#"):
             continue
         else:
             raw_spec = line.strip().rstrip("\\").strip()
             if ";" in raw_spec:
                 ver_spec, cond = raw_spec.split(";", 1)
-                if not eval(cond, None, platform_info):
-                    continue
+                # if not eval(cond, None, platform_info):
+                #     continue
             else:
                 ver_spec = raw_spec
             spec = ver_spec.split()[0]

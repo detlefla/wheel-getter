@@ -12,6 +12,7 @@ wheels/
 # Editor backup and lock files
 *~
 .#*
+DEADJOE
 
 # Generated README files
 README.html

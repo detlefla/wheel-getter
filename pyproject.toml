@@ -1,6 +1,6 @@
 [project]
 name = "wheel-getter"
-version = "0.5.1"
+version = "0.6.0"
 description = "Get or build wheels for isolated installation of a Python package"
 readme = "README.md"
 authors = [
@@ -16,6 +16,7 @@ dependencies = [
     "niquests>=3.15.2",
     "pip>=25.2",
     "wheel-filename>=1.4.2",
+    "xdg-base-dirs>=6.0.2",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

@@ -1,5 +1,5 @@
 import asyncio
-from cyclopts import App
+import cyclopts
 import logging
 import niquests
 import os
@@ -8,6 +8,7 @@ from rich import print
 from rich.logging import RichHandler
 import sys
 
+from .actions import execute_actions
 from .pkgstatus import get_locklist, package_item_action, Action, Options
 from .reporter import Reporter, TagMatcher
 from . import VERSION
@@ -21,7 +22,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger("wheel_getter")
 reporter = Reporter()
-app = App(version=VERSION)
+app = cyclopts.App(
+        name = "wheel-getter",
+        version = VERSION,
+        config = [
+            cyclopts.config.Env("WHEEL_GETTER_"),
+            cyclopts.config.Yaml(
+                "wheel_getter_config.yaml",
+                search_parents = True,
+                use_commands_as_keys = False,
+                ),
+            ]
+        )
 
 
 @app.default
@@ -30,6 +42,7 @@ def get_wheels(
         # lockfile: Path = Path("uv.lock"),
         project: Path | None = None,
         directory: Path | None = None,
+        clear: bool = False,
         python: str | None = None,
         debug: bool = False,
         dry_run: bool = False,
@@ -80,6 +93,12 @@ def get_wheels(
         else:
             wheelhouse.mkdir(parents=True, exist_ok=True)
             logging.info("created wheelhouse directory “%s”", wheelhouse)
+    if clear:
+        if dry_run:
+            print(f"[green]would remove all files from “{wheelhouse}”")
+        else:
+            subprocess.run(["rm", "-rf", f"{wheelhouse}/*"], check=True)
+            logging.info("removed all files from “%s”", wheelhouse)
     
     matcher = TagMatcher(python=python_version)
     
@@ -92,17 +111,9 @@ def get_wheels(
         if action is not None:
             actions.append(action)
     
-    asyncio.run(process_actions(actions))
+    execute_actions(actions, destination=wheelhouse, dry_run=dry_run)
     for action in actions:
         if action.failed:
             reporter.error(action.message)
     
     reporter.report()
-
-
-async def process_actions(actions: list[Action]) -> None:
-    async with niquests.AsyncSession() as s:
-        await asyncio.gather(*[
-                action.execute(session=s)
-                for action in actions
-                ])

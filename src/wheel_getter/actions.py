@@ -6,11 +6,14 @@ import niquests
 from pathlib import Path
 import subprocess
 import sys
+from typing import cast
 from urllib.parse import urlparse
 from wheel_filename import parse_wheel_filename
 
 
+from .cache import CacheDatabase
 from .checksums import get_checksum, verify_checksum
+from .copyfiles import copy_files
 
 
 logger = logging.getLogger("wheel_getter")
@@ -20,6 +23,67 @@ class Download(Enum):
     NONE = 0
     WHEEL = 1
     SDIST = 2
+
+
+class Downloader:
+    def __init__(self) -> None:
+        self.session = niquests.Session(multiplexed=True)
+    
+    def add_download(self, uri: str) -> niquests.models.ResponsePromise:
+        rp = self.session.get(uri)
+        return rp
+    
+    def execute(self) -> None:
+        self.session.gather()
+
+
+class Copier:
+    def __init__(self, target_dir: Path) -> None:
+        self.target_dir = target_dir
+        self.source_files: list[Path] = []
+    
+    def add_copy(self, src: Path) -> None:
+        self.source_files.append(src)
+    
+    def execute(self, clean: bool = False) -> None:
+        copy_files(self.target_dir, self.source_files, clean=clean)
+
+
+def execute_actions(
+        actions: list["Action"],
+        destination: Path,
+        dry_run: bool = False,
+        ) -> None:
+    cdb = CacheDatabase()
+    dl = Downloader()
+    cp = Copier(destination)
+    
+    no_dry_actions: list["Action"] = []
+    for action in actions:
+        if dry_run or action.dry_run:
+            action.do_dry_run()
+        else:
+            no_dry_actions.append(action)
+    if not no_dry_actions:
+        return
+    actions = no_dry_actions
+    
+    # try to find all files in the cache
+    for action in actions:
+        action.check_cache(cdb)
+    for action in actions:
+        action.request_download(dl)
+    dl.execute()
+    for action in actions:
+        action.process_download(cdb)
+    for action in actions:
+        action.build_wheel(cdb)
+    for action in actions:
+        if action.failed or action.wheel_filename is None:
+            # report
+            continue
+        cp.add_copy(action.wheel_filename)
+    cp.execute()
 
 
 class Action(msgspec.Struct):
@@ -36,12 +100,15 @@ class Action(msgspec.Struct):
     
     # task options / data
     download: Download = Download.NONE
+    download_request: niquests.models.ResponsePromise | niquests.models.Response | None = None
     build: bool = False
     url: str | None = None
     source_path: Path | None = None
     wheel_name: str = ""
     wheel_size: int = 0
     wheel_hash: str = ""
+    wheel_filename: Path | None = None
+    sdist_filename: Path | None = None
     add_to_cache: bool = False
     
     # results and status information
@@ -50,89 +117,80 @@ class Action(msgspec.Struct):
     message: str = ""
     download_status: int = 0
     
-    async def execute(self,
-            session: niquests.AsyncSession,
+    def check_cache(self,
+            cdb: CacheDatabase,
             ) -> None:
-        """Executes the action."""
-        if self.dry_run:
-            if self.download == Download.SDIST:
-                logger.info(
-                        "Would download sdist for %s from %s",
-                        self.name, self.url)
-            elif self.download == Download.WHEEL:
-                logger.info(
-                        "Would download wheel for %s from %s",
-                        self.name,  self.url)
-            elif self.source_path is not None:
-                logger.info(
-                        "Would copy wheel for %s from %s",
-                        self.name, self.source_path)
-            if self.build:
-                logger.info(
-                        "Would build wheel for %s",
-                        self.name)
-            return
-        
-        if self.download == Download.SDIST:
-            data = await self.download_data(session)
-            if not self.failed:
-                logger.info("downloaded sdist for %s", self.name)
-            await self.check_wheel(data)
-            if not self.failed:
-                data = await self.build_wheel(data)
-            if not self.failed:
-                logger.info("built wheel for %s", self.name)
-        elif self.download == Download.WHEEL:
-            data = await self.download_data(session)
-            if not self.failed:
-                await self.check_wheel(data)
-            if not self.failed:
-                logger.info("downloaded wheel for %s", self.name)
-        else:
-            data = await self.read_wheel()
-            if not self.failed:
-                logger.info("copied wheel for %s from %s", self.name, self.source_path)
-        if not self.failed:
-            await self.write_wheel(data)
-            logger.info("wheel for %s written", self.name)
-    
-    async def download_data(self,
-            session: niquests.AsyncSession,
-            ) -> bytes:
-        """Downloads wheel."""
-        if self.url is None:
-            raise ValueError("URL missing")  # for the type checker
-        r = await session.get(self.url, stream=True)
-        data = await r.content
-        self.download_status = r.status_code or 0
-        if not r.ok:
-            self.failed = True
-            self.message_weight = logging.ERROR
-            self.message = (
-                    f"download for {self.name} from {self.url} failed: "
-                    f"status={r.status_code}"
+        if self.download == Download.WHEEL:
+            r = cdb.find_wheel(
+                    self.wheel_name,
+                    size=self.wheel_size,
+                    hash=self.wheel_hash,
                     )
-            return b""
-        if data is None:
+            if r is not None:
+                self.wheel_filename = r
+        elif self.download == Download.SDIST:
+            name = Path(cast(str, urlparse(self.url).path)).name
+            r = cdb.find_sdist(
+                    name,
+                    )
+            if r is not None:
+                self.sdist_filename = r
+        else:
+            pass  # no download
+    
+    def request_download(self,
+            downloader: Downloader,
+            ) -> None:
+        if self.url is None:
+            return
+        if self.download == Download.WHEEL and self.wheel_filename is None:
+            self.download_request = downloader.add_download(self.url)
+        elif self.download == Download.SDIST and self.sdist_filename is None:
+            self.download_request = downloader.add_download(self.url)
+        # else: no download requested
+        return
+    
+    def process_download(self,
+            cdb: CacheDatabase,
+            ) -> None:
+        response = self.download_request
+        if response is None:
+            # no download
+            return
+        if not response.ok:
             self.failed = True
             self.message_weight = logging.ERROR
-            self.message = f"no data received from {self.url}"
-            return b""
-        return data
+            self.message = f"Download from {self.url} failed: {response.reason}"
+            self.download_status = cast(int, response.status_code)
+            return
+        if self.download == Download.WHEEL:
+            data = cast(bytes, response.content)
+            ok = self.check_wheel(data)
+            if not ok:
+                return
+            self.wheel_filename = cdb.add_wheel(self.wheel_name, data, self.url)
+        elif self.download == Download.SDIST:
+            data = cast(bytes, response.content)
+            name = Path(cast(str, urlparse(self.url).path)).name
+            self.sdist_filename = cdb.add_sdist(name, data, self.url)
+        return
     
-    async def build_wheel(self, data: bytes) -> bytes:
+    def build_wheel(self,
+            cdb: CacheDatabase,
+            ) -> None:
         """Builds a wheel from an sdist."""
-        
-        if self.url is None:
-            raise ValueError(f"no URL for {self.name}")
-        parsed_url = urlparse(self.url).path
-        filename = Path(parsed_url).name
-        
-        workdir = self.target_directory.absolute() / f"tmp-{self.name}"
-        if not workdir.exists():
-            workdir.mkdir()
-        filepath = workdir / filename
-        filepath.write_bytes(data)
+        if self.download != Download.SDIST or self.wheel_filename is not None:
+            return
+# XXX        workdir = self.target_directory.absolute() / f"tmp-{self.name}"
+#        if not workdir.exists():
+#            workdir.mkdir()
+        # filepath = workdir / filename  # XXX
+        # filepath.write_bytes(data)  # XXX
+        filepath = self.wheel_filename
+        if filepath is None:
+            return  # XXX
+        workdir = Path("/tmp/work")  # XXX
+        workdir.mkdir(exist_ok=True)  # XXX
         
         try:
             result = subprocess.run(
@@ -141,7 +199,7 @@ class Action(msgspec.Struct):
                         "--no-config",
                         "--python", self.python,
                         "--out-dir", workdir / "dist",
-                        filepath,
+                        str(filepath),
                         ],
                     capture_output=True,
                     )
@@ -150,7 +208,7 @@ class Action(msgspec.Struct):
                 print(result.stderr, file=sys.stderr)
                 self.failed = True
                 self.message = f"failed to build wheel for {self.name}"
-                return b""
+                return
             wheel_found = False
             wheel_path = Path("")  # make pyright happy; this is always overwritten
             for path in (workdir / "dist").glob("*.whl"):
@@ -165,7 +223,7 @@ class Action(msgspec.Struct):
             if not wheel_found:
                 self.failed = True
                 self.message = f"no wheel for {self.name} found after build"
-                return b""
+                return
             self.wheel_name = wheel_path.name
             data = wheel_path.read_bytes()
             
@@ -175,18 +233,30 @@ class Action(msgspec.Struct):
                 workdir.rmdir()
             except OSError:
                 pass
-        return data
-
-    async def read_wheel(self) -> bytes:
-        """Reads wheel from disk."""
-        filename = self.source_path
-        if not filename:
-            raise ValueError("no input filename")  # make type checker happy
-        data = filename.read_bytes()
-        logger.debug("wheel for %s read from %s", self.name, filename)
-        return data
+        self.wheel_path = cdb.add_wheel(self.wheel_name, data, self.url)
     
-    async def check_wheel(self, data: bytes) -> None:
+    def do_dry_run(self,
+            ) -> None:
+        """Simulates the action."""
+        if self.download == Download.SDIST:
+            logger.info(
+                    "Would download sdist for %s from %s",
+                    self.name, self.url)
+        elif self.download == Download.WHEEL:
+            logger.info(
+                    "Would download wheel for %s from %s",
+                    self.name,  self.url)
+        elif self.source_path is not None:
+            logger.info(
+                    "Would copy wheel for %s from %s",
+                    self.name, self.source_path)
+        if self.build:
+            logger.info(
+                    "Would build wheel for %s",
+                    self.name)
+        return
+    
+    def check_wheel(self, data: bytes) -> bool:
         """Checks wheel size and hash sum."""
         if self.wheel_size and self.wheel_size != len(data):
             self.failed = True
@@ -195,23 +265,10 @@ class Action(msgspec.Struct):
                     f"wrong wheel size detected for {self.name}: "
                     f"{len(data)} (expected: {self.wheel_size})"
                     )
-            return
+            return False
         if self.wheel_hash and not verify_checksum(data, self.wheel_hash):
             self.failed = True
             self.message_weight = logging.ERROR
             self.message = f"checksum failure for {self.name}"
-            return
-    
-    async def write_wheel(self, data: bytes) -> None:
-        """Writes wheel data to target directory."""
-        filename = self.target_directory / self.wheel_name
-        filename.write_bytes(data)
-        logger.debug("wheel %s written", filename)
-        
-        wheel_size = len(data)
-        wheel_hash = get_checksum(data)
-        wheel_name = filename.name
-        metadata = {"filename": wheel_name, "hash": wheel_hash, "size": wheel_size}
-        metafile = self.target_directory / f"{self.name}-{self.version}.info"
-        json.dump(metadata, open(metafile, "w"))
-    
+            return False
+        return True

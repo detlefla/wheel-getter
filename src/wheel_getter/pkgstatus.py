@@ -88,21 +88,22 @@ def package_item_action(
         ) -> Action | None:
     """Creates an Action object for a PackageListItem."""
     
-    # is a locally built wheel present in the wheelhouse?
-    info_name = options.wheelhouse / f"{item.name}-{item.version}.info"
-    if info_name.exists():
-        try:
-            metadata = json.load(open(info_name))
-            filename = options.wheelhouse / metadata.get("filename", "")
-            hash = metadata.get("hash", "")
-            size = metadata.get("size", 0)
-            if filename.exists():
-                content = filename.read_bytes()
-                if len(content) == size and verify_checksum(content, hash):
-                    logger.info("suitable wheel found for %s", item.name)
-                    return None
-        except Exception:
-            pass
+    if False:
+        # is a locally built wheel present in the wheelhouse?
+        info_name = options.wheelhouse / f"{item.name}-{item.version}.info"
+        if info_name.exists():
+            try:
+                metadata = json.load(open(info_name))
+                filename = options.wheelhouse / metadata.get("filename", "")
+                hash = metadata.get("hash", "")
+                size = metadata.get("size", 0)
+                if filename.exists():
+                    content = filename.read_bytes()
+                    if len(content) == size and verify_checksum(content, hash):
+                        logger.info("suitable wheel found for %s", item.name)
+                        return None
+            except Exception:
+                pass
     
     make_action = functools.partial(Action,
             name=item.name,

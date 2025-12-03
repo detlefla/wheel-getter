@@ -181,16 +181,12 @@ class Action(msgspec.Struct):
         """Builds a wheel from an sdist."""
         if self.download != Download.SDIST or self.wheel_filename is not None:
             return
-# XXX        workdir = self.target_directory.absolute() / f"tmp-{self.name}"
-#        if not workdir.exists():
-#            workdir.mkdir()
-        # filepath = workdir / filename  # XXX
-        # filepath.write_bytes(data)  # XXX
-        filepath = self.wheel_filename
+        workdir = self.target_directory.absolute() / f"tmp-{self.name}"
+        workdir.mkdir(exist_ok=True)
+        filepath = self.sdist_filename
         if filepath is None:
+            print(f"XXX sdist not found: {filepath}")
             return  # XXX
-        workdir = Path("/tmp/work")  # XXX
-        workdir.mkdir(exist_ok=True)  # XXX
         
         try:
             result = subprocess.run(
@@ -233,7 +229,7 @@ class Action(msgspec.Struct):
                 workdir.rmdir()
             except OSError:
                 pass
-        self.wheel_path = cdb.add_wheel(self.wheel_name, data, self.url)
+        self.wheel_filename = cdb.add_wheel(self.wheel_name, data, self.url)
     
     def do_dry_run(self,
             ) -> None:

@@ -4,6 +4,7 @@ import logging
 import msgspec
 import niquests
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from typing import cast
@@ -224,9 +225,8 @@ class Action(msgspec.Struct):
             data = wheel_path.read_bytes()
             
         finally:
-            filepath.unlink(missing_ok=True)
             try:
-                workdir.rmdir()
+                shutil.rmtree(workdir)
             except OSError:
                 pass
         self.wheel_filename = cdb.add_wheel(self.wheel_name, data, self.url)

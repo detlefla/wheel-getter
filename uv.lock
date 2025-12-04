@@ -563,7 +563,7 @@ wheels = [
 
 [[package]]
 name = "wheel-getter"
-version = "0.5.1"
+version = "0.6.3"
 source = { editable = "." }
 dependencies = [
     { name = "cyclopts" },
@@ -571,6 +571,7 @@ dependencies = [
     { name = "niquests" },
     { name = "pip" },
     { name = "wheel-filename" },
+    { name = "xdg-base-dirs" },
 ]
 
 [package.dev-dependencies]
@@ -587,6 +588,7 @@ requires-dist = [
     { name = "niquests", specifier = ">=3.15.2" },
     { name = "pip", specifier = ">=25.2" },
     { name = "wheel-filename", specifier = ">=1.4.2" },
+    { name = "xdg-base-dirs", specifier = ">=6.0.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -594,4 +596,13 @@ dev = [
     { name = "ipython", specifier = ">=9.5.0" },
     { name = "mypy", specifier = ">=1.17.1" },
     { name = "pyright", specifier = ">=1.1.406" },
+]
+
+[[package]]
+name = "xdg-base-dirs"
+version = "6.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/d0/bbe05a15347538aaf9fa5b51ac3b97075dfb834931fcb77d81fbdb69e8f6/xdg_base_dirs-6.0.2.tar.gz", hash = "sha256:950504e14d27cf3c9cb37744680a43bf0ac42efefc4ef4acf98dc736cab2bced", size = 4085, upload-time = "2024-10-19T14:35:08.114Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fc/03/030b47fd46b60fc87af548e57ff59c2ca84b2a1dadbe721bb0ce33896b2e/xdg_base_dirs-6.0.2-py3-none-any.whl", hash = "sha256:3c01d1b758ed4ace150ac960ac0bd13ce4542b9e2cdf01312dcda5012cfebabe", size = 4747, upload-time = "2024-10-19T14:35:05.931Z" },
 ]

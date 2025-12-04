@@ -72,6 +72,7 @@ def execute_actions(
     # try to find all files in the cache
     for action in actions:
         action.check_cache(cdb)
+        action.check_local(cdb)
     for action in actions:
         action.request_download(dl)
     dl.execute()
@@ -138,6 +139,13 @@ class Action(msgspec.Struct):
                 self.sdist_filename = r
         else:
             pass  # no download
+    
+    def check_local(self,
+            cdb: CacheDatabase,
+            ) -> None:
+        if self.download == Download.NONE:
+            data = self.source_path.read_bytes()
+            self.wheel_filename = cdb.add_wheel(self.wheel_name, data, "")
     
     def request_download(self,
             downloader: Downloader,

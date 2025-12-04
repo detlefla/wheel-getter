@@ -563,7 +563,7 @@ wheels = [
 
 [[package]]
 name = "wheel-getter"
-version = "0.6.3"
+version = "0.6.6"
 source = { editable = "." }
 dependencies = [
     { name = "cyclopts" },

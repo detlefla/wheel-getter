@@ -1,11 +1,10 @@
-import asyncio
 import cyclopts
 import logging
-import niquests
 import os
 from pathlib import Path
 from rich import print
 from rich.logging import RichHandler
+import subprocess
 import sys
 
 from .actions import execute_actions
